@@ -21,6 +21,7 @@ val ElegantPrimaryDark = Color(0xFFD0BCFF)
 val ElegantPrimaryContainer = Color(0xFF4A4458)
 val ElegantOnPrimary = Color(0xFF381E72)
 val ElegantOnPrimaryContainer = Color(0xFFEADDFF)
+val ElegantAccentGold = Color(0xFFFFD580)
 
 // Status Colors
 val ElegantMovingGreen = Color(0xFFB4E2B4)

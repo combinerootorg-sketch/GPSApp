@@ -59,6 +59,7 @@ import com.example.ui.components.PermissionExplanationDialog
 import com.example.ui.components.PowerSavingTripView
 import com.example.ui.components.SpeedometerGauge
 import com.example.ui.components.TripActionControls
+import com.example.ui.components.TripCostCard
 import com.example.ui.components.TripStatusBadge
 import com.example.ui.components.TripTimerDisplay
 import com.example.ui.theme.ElegantMovingGreen
@@ -293,6 +294,18 @@ fun HomeScreen(
                     waitingDurationMillis = tripState.waitingDurationMillis,
                     totalDistanceMeters = tripState.totalDistanceMeters,
                     distanceUnit = settings.distanceUnit
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Trip Cost Calculator Card (Independent presentación layer)
+                TripCostCard(
+                    distanceMeters = tripState.totalDistanceMeters,
+                    fuelPricePerLiter = settings.fuelPricePerLiter,
+                    fuelEconomyKmPerLiter = settings.fuelEconomyKmPerLiter,
+                    currencySymbol = settings.fuelCurrencySymbol,
+                    distanceUnit = settings.distanceUnit,
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))

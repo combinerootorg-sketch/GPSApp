@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -31,6 +32,9 @@ class SettingsRepository(private val context: Context) {
         val POWER_SAVING_DIM_SCREEN = booleanPreferencesKey("power_saving_dim_screen")
         val VIBRATION_ENABLED = booleanPreferencesKey("vibration_enabled")
         val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
+        val FUEL_PRICE_PER_LITER = doublePreferencesKey("fuel_price_per_liter")
+        val FUEL_ECONOMY_KM_PER_LITER = doublePreferencesKey("fuel_economy_km_per_liter")
+        val FUEL_CURRENCY_SYMBOL = stringPreferencesKey("fuel_currency_symbol")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { preferences ->
@@ -50,7 +54,10 @@ class SettingsRepository(private val context: Context) {
             keepScreenAwake = preferences[PreferencesKeys.KEEP_SCREEN_AWAKE] ?: false,
             powerSavingDimScreen = preferences[PreferencesKeys.POWER_SAVING_DIM_SCREEN] ?: false,
             vibrationEnabled = preferences[PreferencesKeys.VIBRATION_ENABLED] ?: true,
-            soundEnabled = preferences[PreferencesKeys.SOUND_ENABLED] ?: false
+            soundEnabled = preferences[PreferencesKeys.SOUND_ENABLED] ?: false,
+            fuelPricePerLiter = preferences[PreferencesKeys.FUEL_PRICE_PER_LITER] ?: 0.0,
+            fuelEconomyKmPerLiter = preferences[PreferencesKeys.FUEL_ECONOMY_KM_PER_LITER] ?: 0.0,
+            fuelCurrencySymbol = preferences[PreferencesKeys.FUEL_CURRENCY_SYMBOL] ?: "Rs."
         )
     }
 
@@ -92,5 +99,25 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun updateSoundEnabled(enabled: Boolean) {
         context.dataStore.edit { it[PreferencesKeys.SOUND_ENABLED] = enabled }
+    }
+
+    suspend fun updateFuelPricePerLiter(price: Double) {
+        context.dataStore.edit { it[PreferencesKeys.FUEL_PRICE_PER_LITER] = price }
+    }
+
+    suspend fun updateFuelEconomyKmPerLiter(economy: Double) {
+        context.dataStore.edit { it[PreferencesKeys.FUEL_ECONOMY_KM_PER_LITER] = economy }
+    }
+
+    suspend fun updateFuelCurrencySymbol(symbol: String) {
+        context.dataStore.edit { it[PreferencesKeys.FUEL_CURRENCY_SYMBOL] = symbol }
+    }
+
+    suspend fun updateCostCalculatorSettings(price: Double, economy: Double, symbol: String) {
+        context.dataStore.edit {
+            it[PreferencesKeys.FUEL_PRICE_PER_LITER] = price
+            it[PreferencesKeys.FUEL_ECONOMY_KM_PER_LITER] = economy
+            it[PreferencesKeys.FUEL_CURRENCY_SYMBOL] = symbol
+        }
     }
 }

@@ -88,6 +88,30 @@ class SettingsViewModel(
         }
     }
 
+    fun updateFuelPrice(price: Double) {
+        viewModelScope.launch {
+            settingsRepository.updateFuelPricePerLiter(price)
+        }
+    }
+
+    fun updateFuelEconomy(economy: Double) {
+        viewModelScope.launch {
+            settingsRepository.updateFuelEconomyKmPerLiter(economy)
+        }
+    }
+
+    fun updateFuelCurrencySymbol(symbol: String) {
+        viewModelScope.launch {
+            settingsRepository.updateFuelCurrencySymbol(symbol)
+        }
+    }
+
+    fun updateCostCalculatorSettings(price: Double, economy: Double, symbol: String) {
+        viewModelScope.launch {
+            settingsRepository.updateCostCalculatorSettings(price, economy, symbol)
+        }
+    }
+
     fun exportAllCsv() {
         viewModelScope.launch {
             val all = tripRepository.allTrips.stateIn(viewModelScope).value

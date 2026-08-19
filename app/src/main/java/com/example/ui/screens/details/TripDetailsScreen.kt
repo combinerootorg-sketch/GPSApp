@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.components.InteractiveRouteMap
 import com.example.ui.components.StatCard
+import com.example.ui.components.TripCostCard
 import com.example.ui.theme.PrimaryCyan
 import com.example.ui.theme.StatusErrorRed
 import com.example.ui.theme.StatusMovingGreen
@@ -288,6 +289,17 @@ fun TripDetailsScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                // Trip Cost & Fuel Calculation Card
+                TripCostCard(
+                    distanceMeters = t.totalDistanceMeters,
+                    fuelPricePerLiter = settings.fuelPricePerLiter,
+                    fuelEconomyKmPerLiter = settings.fuelEconomyKmPerLiter,
+                    currencySymbol = settings.fuelCurrencySymbol,
+                    distanceUnit = settings.distanceUnit,
+                    title = "Trip Fuel Cost",
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 // GPS Location Coordinates Card
                 if (t.startLatitude != null && t.startLongitude != null) {

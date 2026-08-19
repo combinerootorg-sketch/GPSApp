@@ -44,8 +44,14 @@ data class AppSettings(
     val keepScreenAwake: Boolean = false,
     val powerSavingDimScreen: Boolean = false,
     val vibrationEnabled: Boolean = true,
-    val soundEnabled: Boolean = false
-)
+    val soundEnabled: Boolean = false,
+    val fuelPricePerLiter: Double = 0.0,
+    val fuelEconomyKmPerLiter: Double = 0.0,
+    val fuelCurrencySymbol: String = "Rs."
+) {
+    val isCostCalculatorConfigured: Boolean
+        get() = fuelPricePerLiter > 0.0 && fuelEconomyKmPerLiter > 0.0
+}
 
 data class TripStatistics(
     val totalTrips: Int = 0,

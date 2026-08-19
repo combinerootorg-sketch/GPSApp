@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.components.InteractiveRouteMap
 import com.example.ui.components.StatCard
+import com.example.ui.components.TripCostCard
 import com.example.ui.screens.details.TripDetailsViewModel
 import com.example.ui.theme.PrimaryCyan
 import com.example.ui.theme.StatusMovingGreen
@@ -216,6 +217,17 @@ fun TripSummaryScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                // Final Trip Cost & Fuel Calculation
+                TripCostCard(
+                    distanceMeters = t.totalDistanceMeters,
+                    fuelPricePerLiter = settings.fuelPricePerLiter,
+                    fuelEconomyKmPerLiter = settings.fuelEconomyKmPerLiter,
+                    currencySymbol = settings.fuelCurrencySymbol,
+                    distanceUnit = settings.distanceUnit,
+                    title = "Trip Fuel Cost",
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 // Mini Map Route Preview
                 if (points.isNotEmpty()) {
