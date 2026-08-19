@@ -40,14 +40,17 @@ class TripTimerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Configure osmdroid for offline tile caching and custom user agent
+        // Configure osmdroid for modern tile caching and memory management
         runCatching {
             val sharedPrefs = getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE)
-            Configuration.getInstance().load(this, sharedPrefs)
-            Configuration.getInstance().userAgentValue = packageName
+            val config = Configuration.getInstance()
+            config.load(this, sharedPrefs)
+            config.userAgentValue = packageName
             val basePath = File(cacheDir, "osmdroid")
-            Configuration.getInstance().osmdroidBasePath = basePath
-            Configuration.getInstance().osmdroidTileCache = File(basePath, "tiles")
+            config.osmdroidBasePath = basePath
+            config.osmdroidTileCache = File(basePath, "tiles")
+            config.isMapViewHardwareAccelerated = true
+            config.cacheMapTileCount = 12
         }
 
         database = AppDatabase.getInstance(this)

@@ -18,11 +18,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,7 +44,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -54,9 +51,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.domain.model.TripPoint
-import com.example.ui.theme.PrimaryCyan
-import com.example.ui.theme.StatusErrorRed
-import com.example.ui.theme.StatusMovingGreen
+import com.example.ui.theme.ElegantError
+import com.example.ui.theme.ElegantMovingGreen
+import com.example.ui.theme.ElegantPrimary
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
@@ -69,16 +66,19 @@ fun InteractiveRouteMap(
     points: List<TripPoint>,
     modifier: Modifier = Modifier
 ) {
-    var showOsmMap by remember { mutableStateOf(true) }
+    var showOsmMap by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
             .testTag("interactive_route_map")
             .fillMaxWidth()
             .height(340.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (points.isEmpty()) {
@@ -91,14 +91,14 @@ fun InteractiveRouteMap(
                         Icon(
                             imageVector = Icons.Default.Place,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             modifier = Modifier.size(36.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No GPS route points recorded for this trip",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 14.sp
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            fontSize = 13.sp
                         )
                     }
                 }
@@ -136,13 +136,13 @@ fun InteractiveRouteMap(
                         Icon(
                             imageVector = if (showOsmMap) Icons.Default.Layers else Icons.Default.CloudOff,
                             contentDescription = "Switch Map Mode",
-                            tint = MaterialTheme.colorScheme.primary,
+                            tint = ElegantPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     Text(
-                        text = if (showOsmMap) "OSM Map" else "Offline Vector",
-                        fontSize = 12.sp,
+                        text = if (showOsmMap) "OSM" else "Vector",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(end = 6.dp)
@@ -167,9 +167,9 @@ fun InteractiveRouteMap(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(10.dp)
+                                .size(8.dp)
                                 .clip(CircleShape)
-                                .background(StatusMovingGreen)
+                                .background(ElegantMovingGreen)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Start", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -178,9 +178,9 @@ fun InteractiveRouteMap(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(10.dp)
+                                .size(8.dp)
                                 .clip(CircleShape)
-                                .background(StatusErrorRed)
+                                .background(ElegantError)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("End", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -189,7 +189,7 @@ fun InteractiveRouteMap(
                     Text(
                         text = "${points.size} pts",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }
             }
@@ -214,10 +214,10 @@ private fun OsmdroidMapView(
                 val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
 
                 if (geoPoints.isNotEmpty()) {
-                    // Polyline for Route
+                    // Polyline for Route with Elegant Primary lavender color
                     val line = Polyline().apply {
                         setPoints(geoPoints)
-                        outlinePaint.color = android.graphics.Color.parseColor("#0284C7")
+                        outlinePaint.color = android.graphics.Color.parseColor("#D0BCFF")
                         outlinePaint.strokeWidth = 10f
                         outlinePaint.strokeCap = Paint.Cap.ROUND
                         outlinePaint.strokeJoin = Paint.Join.ROUND
@@ -233,7 +233,7 @@ private fun OsmdroidMapView(
                     }
                     overlayManager.add(startMarker)
 
-                    // End Marker (Red)
+                    // End Marker (Coral)
                     if (geoPoints.size > 1) {
                         val endMarker = Marker(this).apply {
                             position = geoPoints.last()
@@ -267,10 +267,15 @@ private fun OsmdroidMapView(
                         controller.setCenter(geoPoints.first())
                     }
                 }
+                onResume()
             }
         },
-        update = { mapView ->
-            // Map updates on points change if needed
+        update = {
+            // Map updates on points change
+        },
+        onRelease = { mapView ->
+            mapView.onPause()
+            mapView.onDetach()
         }
     )
 }
@@ -286,7 +291,7 @@ private fun CanvasRouteVisualizer(
 
     Box(
         modifier = modifier
-            .background(Color(0xFF0F172A))
+            .background(Color(0xFF141218))
             .pointerInput(Unit) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     scale = (scale * zoom).coerceIn(0.5f, 5f)
@@ -308,12 +313,12 @@ private fun CanvasRouteVisualizer(
             val latSpan = (maxLat - minLat).coerceAtLeast(0.0001)
             val lonSpan = (maxLon - minLon).coerceAtLeast(0.0001)
 
-            val padding = 60.dp.toPx()
+            val padding = 50.dp.toPx()
             val drawWidth = size.width - (padding * 2)
             val drawHeight = size.height - (padding * 2)
 
             // Draw subtle background grid
-            val gridColor = Color(0xFF1E293B)
+            val gridColor = Color(0xFF2B2930)
             for (i in 1..4) {
                 val gx = (size.width / 5) * i
                 drawLine(gridColor, Offset(gx, 0f), Offset(gx, size.height), strokeWidth = 1f)
@@ -350,9 +355,9 @@ private fun CanvasRouteVisualizer(
             // Draw Route Polyline
             drawPath(
                 path = path,
-                color = Color(0xFF38BDF8),
+                color = ElegantPrimary,
                 style = Stroke(
-                    width = 6.dp.toPx(),
+                    width = 5.dp.toPx(),
                     cap = StrokeCap.Round,
                     join = StrokeJoin.Round
                 )
@@ -360,14 +365,14 @@ private fun CanvasRouteVisualizer(
 
             // Start Point Marker (Green Pin)
             val startOffset = projectPoint(points.first().latitude, points.first().longitude)
-            drawCircle(color = Color(0xFF10B981), radius = 9.dp.toPx(), center = startOffset)
-            drawCircle(color = Color.White, radius = 4.dp.toPx(), center = startOffset)
+            drawCircle(color = ElegantMovingGreen, radius = 8.dp.toPx(), center = startOffset)
+            drawCircle(color = Color.White, radius = 3.dp.toPx(), center = startOffset)
 
-            // End Point Marker (Red Pin)
+            // End Point Marker (Coral Pin)
             if (points.size > 1) {
                 val endOffset = projectPoint(points.last().latitude, points.last().longitude)
-                drawCircle(color = Color(0xFFEF4444), radius = 9.dp.toPx(), center = endOffset)
-                drawCircle(color = Color.White, radius = 4.dp.toPx(), center = endOffset)
+                drawCircle(color = ElegantError, radius = 8.dp.toPx(), center = endOffset)
+                drawCircle(color = Color.White, radius = 3.dp.toPx(), center = endOffset)
             }
         }
 
@@ -388,7 +393,7 @@ private fun CanvasRouteVisualizer(
             Icon(
                 imageVector = Icons.Default.RestartAlt,
                 contentDescription = "Reset Zoom",
-                tint = MaterialTheme.colorScheme.primary,
+                tint = ElegantPrimary,
                 modifier = Modifier.size(18.dp)
             )
         }
