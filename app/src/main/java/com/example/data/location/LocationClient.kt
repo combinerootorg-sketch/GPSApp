@@ -4,7 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.os.Looper
-import com.example.domain.model.GpsStatus
+import android.util.Log
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
@@ -16,19 +16,25 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
+data class LocationResultWrapper(
+    val location: Location? = null,
+    val isLocationAvailable: Boolean? = null,
+    val isPermissionDenied: Boolean = false,
+    val isError: Boolean = false
+)
+
 interface LocationClient {
     fun getLocationUpdates(intervalSeconds: Int): Flow<LocationResultWrapper>
 }
-
-data class LocationResultWrapper(
-    val location: Location? = null,
-    val gpsStatus: GpsStatus = GpsStatus.AVAILABLE
-)
 
 class FusedLocationClientImpl(private val context: Context) : LocationClient {
 
     private val fusedClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
+
+    companion object {
+        private const val TAG = "TripTimerGPS"
+    }
 
     @SuppressLint("MissingPermission")
     override fun getLocationUpdates(intervalSeconds: Int): Flow<LocationResultWrapper> = callbackFlow {
@@ -45,20 +51,26 @@ class FusedLocationClientImpl(private val context: Context) : LocationClient {
                 super.onLocationResult(result)
                 val lastLocation = result.lastLocation
                 if (lastLocation != null) {
-                    val status = if (lastLocation.hasAccuracy() && lastLocation.accuracy > 25f) {
-                        GpsStatus.WEAK
-                    } else {
-                        GpsStatus.AVAILABLE
-                    }
-                    trySend(LocationResultWrapper(location = lastLocation, gpsStatus = status))
+                    trySend(
+                        LocationResultWrapper(
+                            location = lastLocation,
+                            isLocationAvailable = true
+                        )
+                    )
                 }
             }
 
             override fun onLocationAvailability(availability: LocationAvailability) {
                 super.onLocationAvailability(availability)
-                if (!availability.isLocationAvailable) {
-                    trySend(LocationResultWrapper(location = null, gpsStatus = GpsStatus.UNAVAILABLE))
-                }
+                val isAvail = availability.isLocationAvailable
+                Log.d(TAG, "FusedLocationProvider onLocationAvailability: isLocationAvailable=$isAvail")
+                // Pass availability as supporting diagnostic info without terminating active GPS state
+                trySend(
+                    LocationResultWrapper(
+                        location = null,
+                        isLocationAvailable = isAvail
+                    )
+                )
             }
         }
 
@@ -67,19 +79,24 @@ class FusedLocationClientImpl(private val context: Context) : LocationClient {
                 locationRequest,
                 locationCallback,
                 Looper.getMainLooper()
-            ).addOnFailureListener {
-                trySend(LocationResultWrapper(location = null, gpsStatus = GpsStatus.UNAVAILABLE))
+            ).addOnFailureListener { e ->
+                Log.w(TAG, "Failed to register location updates: ${e.message}")
+                trySend(LocationResultWrapper(location = null, isError = true))
             }
         } catch (e: SecurityException) {
-            trySend(LocationResultWrapper(location = null, gpsStatus = GpsStatus.PERMISSION_REQUIRED))
+            Log.e(TAG, "SecurityException requesting location updates: ${e.message}")
+            trySend(LocationResultWrapper(location = null, isPermissionDenied = true))
         } catch (e: Exception) {
-            trySend(LocationResultWrapper(location = null, gpsStatus = GpsStatus.UNAVAILABLE))
+            Log.e(TAG, "Exception requesting location updates: ${e.message}")
+            trySend(LocationResultWrapper(location = null, isError = true))
         }
 
         awaitClose {
             try {
                 fusedClient.removeLocationUpdates(locationCallback)
-            } catch (_: Exception) {
+                Log.d(TAG, "Removed location callback successfully")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error removing location callback: ${e.message}")
             }
         }
     }

@@ -62,12 +62,18 @@ object GeoUtils {
             return true
         }
 
-        val timeDiffSeconds = (currentTimeMillis - previousTimeMillis) / 1000.0
-        if (timeDiffSeconds <= 0.0) {
+        val timeDiffMillis = currentTimeMillis - previousTimeMillis
+        if (timeDiffMillis < 0L) {
             return false
         }
 
         val distanceMeters = calculateDistanceMeters(previousLat, previousLon, currentLat, currentLon)
+        val timeDiffSeconds = timeDiffMillis / 1000.0
+
+        if (timeDiffSeconds <= 0.0) {
+            return distanceMeters < 1.0
+        }
+
         val calculatedSpeedMps = distanceMeters / timeDiffSeconds
 
         // Vehicle maximum realistic speed filter (e.g. 70 m/s ~ 250 km/h) to eliminate GPS teleport jumps

@@ -3,9 +3,11 @@ package com.example.data.tracking
 import android.content.Context
 import android.location.Location
 import android.os.SystemClock
+import android.util.Log
 import com.example.data.feedback.FeedbackManager
 import com.example.data.location.FusedLocationClientImpl
 import com.example.data.location.LocationClient
+import com.example.data.location.LocationResultWrapper
 import com.example.data.repository.TripRepository
 import com.example.data.settings.SettingsRepository
 import com.example.domain.model.AppSettings
@@ -26,7 +28,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -58,6 +59,19 @@ class TripTrackingEngine(
     private val feedbackManager: FeedbackManager = FeedbackManager(context)
 ) {
 
+    companion object {
+        private const val TAG = "TripTimerGPS"
+
+        // Robust GPS Status thresholds based on time elapsed since the last valid location update
+        // 0–8s: GPS Active (or Weak if accuracy > 25m)
+        const val GPS_ACTIVE_THRESHOLD_MS = 8_000L
+        // 8–20s (up to 25s): GPS Weak / Searching grace period
+        const val GPS_WEAK_THRESHOLD_MS = 25_000L
+        // > 25s without valid location: GPS Unavailable
+
+        const val ACCURACY_WEAK_THRESHOLD_METERS = 25.0f
+    }
+
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val stateMutex = Mutex()
 
@@ -75,6 +89,14 @@ class TripTrackingEngine(
     private var belowThresholdSinceElapsedRealtime: Long? = null
     private var lastRecordedPointLocation: Location? = null
     private var currentSettings: AppSettings = AppSettings()
+
+    // GPS Health tracking state
+    private var trackingStartTimeElapsedRealtime: Long = 0L
+    private var lastValidLocationElapsedRealtime: Long = 0L
+    private var lastValidLocationWallClock: Long = 0L
+    private var lastValidLocationAccuracy: Float = 0f
+    private var lastKnownLocationAvailability: Boolean = true
+    private var isPermissionDenied: Boolean = false
 
     init {
         engineScope.launch {
@@ -98,9 +120,15 @@ class TripTrackingEngine(
         lastTickElapsedRealtime = nowElapsed
         belowThresholdSinceElapsedRealtime = null
         lastRecordedPointLocation = null
+        trackingStartTimeElapsedRealtime = nowElapsed
+        lastValidLocationElapsedRealtime = 0L
+        lastValidLocationWallClock = 0L
+        lastValidLocationAccuracy = 0f
+        lastKnownLocationAvailability = true
+        isPermissionDenied = false
 
         val previousStatus = _tripState.value.tripStatus
-        val initialStatus = TripStatus.WAITING // Initially waiting until speed >= threshold
+        val initialStatus = TripStatus.WAITING // Initially waiting until speed >= movement threshold
 
         _tripState.value = ActiveTripState(
             tripStatus = initialStatus,
@@ -270,12 +298,16 @@ class TripTrackingEngine(
             0f
         }
 
+        // Re-evaluate GPS health periodically so signal loss transitions through WEAK -> UNAVAILABLE
+        val currentGpsStatus = computeGpsStatus(nowElapsed)
+
         _tripState.update {
             it.copy(
                 movingDurationMillis = newMoving,
                 waitingDurationMillis = newWaiting,
                 totalDurationMillis = newTotal,
-                averageSpeedMps = avgSpeed
+                averageSpeedMps = avgSpeed,
+                gpsStatus = currentGpsStatus
             )
         }
     }
@@ -284,8 +316,8 @@ class TripTrackingEngine(
         locationJob?.cancel()
         locationJob = engineScope.launch {
             val interval = currentSettings.gpsUpdateIntervalSeconds
-            locationClient.getLocationUpdates(interval).collectLatest { wrapper ->
-                processLocationUpdate(wrapper.location, wrapper.gpsStatus)
+            locationClient.getLocationUpdates(interval).collect { wrapper ->
+                processLocationUpdate(wrapper)
             }
         }
     }
@@ -295,21 +327,81 @@ class TripTrackingEngine(
         locationJob = null
     }
 
-    private suspend fun processLocationUpdate(location: Location?, gpsStatus: GpsStatus) = stateMutex.withLock {
-        val state = _tripState.value
-        if (!state.isTracking) {
-            _tripState.update { it.copy(gpsStatus = gpsStatus) }
-            return@withLock
+    private fun computeGpsStatus(nowElapsed: Long): GpsStatus {
+        if (isPermissionDenied) {
+            return GpsStatus.PERMISSION_REQUIRED
         }
 
-        _tripState.update { it.copy(gpsStatus = gpsStatus) }
-
-        if (location == null || state.tripStatus == TripStatus.PAUSED) {
-            return@withLock
+        // If no valid location update received yet
+        if (lastValidLocationElapsedRealtime == 0L) {
+            val timeSinceStart = if (trackingStartTimeElapsedRealtime > 0L) {
+                nowElapsed - trackingStartTimeElapsedRealtime
+            } else {
+                0L
+            }
+            return if (timeSinceStart <= GPS_WEAK_THRESHOLD_MS) {
+                GpsStatus.AVAILABLE // Initial startup grace period
+            } else {
+                if (!lastKnownLocationAvailability) GpsStatus.UNAVAILABLE else GpsStatus.WEAK
+            }
         }
 
+        val timeSinceLastValid = nowElapsed - lastValidLocationElapsedRealtime
+
+        return when {
+            timeSinceLastValid <= GPS_ACTIVE_THRESHOLD_MS -> {
+                if (lastValidLocationAccuracy > ACCURACY_WEAK_THRESHOLD_METERS) {
+                    GpsStatus.WEAK
+                } else {
+                    GpsStatus.AVAILABLE
+                }
+            }
+            timeSinceLastValid <= GPS_WEAK_THRESHOLD_MS -> {
+                // Grace period: GPS Weak / Searching rather than immediate Unavailable
+                GpsStatus.WEAK
+            }
+            else -> {
+                // Sustained period (> 25s) without a valid location update
+                GpsStatus.UNAVAILABLE
+            }
+        }
+    }
+
+    private suspend fun processLocationUpdate(wrapper: LocationResultWrapper) = stateMutex.withLock {
         val nowElapsed = SystemClock.elapsedRealtime()
         val nowWallClock = System.currentTimeMillis()
+        val state = _tripState.value
+
+        if (wrapper.isPermissionDenied) {
+            isPermissionDenied = true
+            _tripState.update { it.copy(gpsStatus = GpsStatus.PERMISSION_REQUIRED) }
+            return@withLock
+        }
+
+        if (wrapper.isLocationAvailable != null) {
+            lastKnownLocationAvailability = wrapper.isLocationAvailable
+            val timeSinceLastValid = if (lastValidLocationElapsedRealtime > 0L) {
+                nowElapsed - lastValidLocationElapsedRealtime
+            } else {
+                -1L
+            }
+            Log.d(
+                TAG,
+                "LocationAvailability callback: isLocationAvailable=${wrapper.isLocationAvailable}, " +
+                        "timeSinceLastValidLocation=${timeSinceLastValid}ms, " +
+                        "tripStatus=${state.tripStatus}, " +
+                        "currentGpsStatus=${state.gpsStatus}"
+            )
+        }
+
+        val location = wrapper.location
+        if (location == null) {
+            val evaluatedGpsStatus = computeGpsStatus(nowElapsed)
+            _tripState.update { it.copy(gpsStatus = evaluatedGpsStatus) }
+            return@withLock
+        }
+
+        isPermissionDenied = false
         val accuracy = if (location.hasAccuracy()) location.accuracy else 15f
 
         val prevLocation = lastRecordedPointLocation
@@ -324,8 +416,21 @@ class TripTrackingEngine(
         )
 
         if (!isValid) {
+            val evaluatedGpsStatus = computeGpsStatus(nowElapsed)
+            _tripState.update { it.copy(gpsStatus = evaluatedGpsStatus) }
             return@withLock
         }
+
+        // Calculate time since previous valid location
+        val timeSincePrevValid = if (lastValidLocationElapsedRealtime > 0L) {
+            nowElapsed - lastValidLocationElapsedRealtime
+        } else {
+            0L
+        }
+
+        lastValidLocationElapsedRealtime = nowElapsed
+        lastValidLocationWallClock = nowWallClock
+        lastValidLocationAccuracy = accuracy
 
         // Calculate speed in m/s
         val currentSpeedMps = if (location.hasSpeed() && location.speed >= 0f) {
@@ -343,7 +448,7 @@ class TripTrackingEngine(
             0f
         }
 
-        // Distance delta
+        // Added distance delta
         var addedDistance = 0.0
         if (prevLocation != null) {
             val d = GeoUtils.calculateDistanceMeters(
@@ -352,7 +457,7 @@ class TripTrackingEngine(
                 location.latitude,
                 location.longitude
             )
-            // Filter noise if device is stationary (distance < 1.5 meters without speed)
+            // Filter stationary GPS drift jitter (< 1.5 meters without velocity)
             if (d >= 1.5 || currentSpeedMps > 0.5f) {
                 addedDistance = d
             }
@@ -365,37 +470,53 @@ class TripTrackingEngine(
         val thresholdMps = currentSettings.movementThresholdKmh / 3.6f
         val idleDelayMillis = currentSettings.idleDetectionDelaySeconds * 1000L
 
-        var nextStatus = state.tripStatus
+        var nextTripStatus = state.tripStatus
 
-        if (currentSpeedMps >= thresholdMps) {
-            // Speed meets or exceeds threshold -> Moving immediately
-            belowThresholdSinceElapsedRealtime = null
-            nextStatus = TripStatus.MOVING
-        } else {
-            // Speed is below threshold
-            if (belowThresholdSinceElapsedRealtime == null) {
-                belowThresholdSinceElapsedRealtime = nowElapsed
-            }
-            val idleDuration = nowElapsed - (belowThresholdSinceElapsedRealtime ?: nowElapsed)
-            if (idleDuration >= idleDelayMillis) {
-                nextStatus = TripStatus.WAITING
+        if (state.isTracking && state.tripStatus != TripStatus.PAUSED && state.tripStatus != TripStatus.STOPPED) {
+            if (currentSpeedMps >= thresholdMps) {
+                // Speed meets or exceeds threshold -> Moving immediately
+                belowThresholdSinceElapsedRealtime = null
+                nextTripStatus = TripStatus.MOVING
+            } else {
+                // Speed is below threshold
+                if (belowThresholdSinceElapsedRealtime == null) {
+                    belowThresholdSinceElapsedRealtime = nowElapsed
+                }
+                val idleDuration = nowElapsed - (belowThresholdSinceElapsedRealtime ?: nowElapsed)
+                if (idleDuration >= idleDelayMillis) {
+                    nextTripStatus = TripStatus.WAITING
+                }
             }
         }
 
-        if (nextStatus != state.tripStatus && state.tripStatus != TripStatus.PAUSED) {
+        if (nextTripStatus != state.tripStatus && state.tripStatus != TripStatus.PAUSED && state.tripStatus != TripStatus.STOPPED) {
             feedbackManager.onTripStatusChanged(
                 oldStatus = state.tripStatus,
-                newStatus = nextStatus,
+                newStatus = nextTripStatus,
                 vibrationEnabled = currentSettings.vibrationEnabled,
                 soundEnabled = currentSettings.soundEnabled
             )
         }
 
+        val newGpsStatus = computeGpsStatus(nowElapsed)
+
+        // Development diagnostic logging without GPS coordinates
+        Log.d(
+            TAG,
+            "Valid location received: timestamp=$nowWallClock, " +
+                    "accuracy=${accuracy}m, " +
+                    "speed=${currentSpeedMps}m/s, " +
+                    "timeSincePrevValid=${timeSincePrevValid}ms, " +
+                    "locationAvailability=$lastKnownLocationAvailability, " +
+                    "tripStatus=$nextTripStatus, " +
+                    "gpsStatus=$newGpsStatus"
+        )
+
         // Add route point if location moved noticeably or every few points
         val shouldAddPoint = prevLocation == null || addedDistance >= 3.0 ||
                 (nowWallClock - (state.routePoints.lastOrNull()?.timestamp ?: 0L) >= 4000L)
 
-        val updatedPoints = if (shouldAddPoint) {
+        val updatedPoints = if (shouldAddPoint && state.isTracking && state.tripStatus != TripStatus.PAUSED) {
             val newPoint = TripPoint(
                 sequenceNumber = state.routePoints.size + 1,
                 timestamp = nowWallClock,
@@ -405,7 +526,7 @@ class TripTrackingEngine(
                 accuracyMeters = accuracy,
                 altitudeMeters = if (location.hasAltitude()) location.altitude else null,
                 bearingDegrees = if (location.hasBearing()) location.bearing else null,
-                status = nextStatus
+                status = nextTripStatus
             )
             state.routePoints + newPoint
         } else {
@@ -416,7 +537,8 @@ class TripTrackingEngine(
 
         _tripState.update {
             it.copy(
-                tripStatus = nextStatus,
+                tripStatus = nextTripStatus,
+                gpsStatus = newGpsStatus,
                 currentSpeedMps = currentSpeedMps,
                 maxSpeedMps = newMaxSpeed,
                 totalDistanceMeters = newTotalDistance,
