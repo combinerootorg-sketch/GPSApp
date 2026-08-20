@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.example.domain.model.GpsDiagnosticEvent
 import com.example.domain.model.Trip
 import com.example.domain.model.TripPoint
 import com.example.domain.model.TripStatus
@@ -137,3 +138,46 @@ data class TripPointEntity(
         )
     }
 }
+
+@Entity(
+    tableName = "gps_diagnostic_events",
+    foreignKeys = [
+        ForeignKey(
+            entity = TripEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["tripId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index(value = ["tripId"]),
+        Index(value = ["gpsLostTime"])
+    ]
+)
+data class GpsDiagnosticEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val tripId: Long,
+    val gpsLostTime: Long,
+    val gpsRecoveredTime: Long?,
+    val durationMillis: Long?
+) {
+    fun toDomain(): GpsDiagnosticEvent = GpsDiagnosticEvent(
+        id = id,
+        tripId = tripId,
+        gpsLostTime = gpsLostTime,
+        gpsRecoveredTime = gpsRecoveredTime,
+        durationMillis = durationMillis ?: if (gpsRecoveredTime != null) (gpsRecoveredTime - gpsLostTime).coerceAtLeast(0L) else null
+    )
+
+    companion object {
+        fun fromDomain(event: GpsDiagnosticEvent): GpsDiagnosticEntity = GpsDiagnosticEntity(
+            id = event.id,
+            tripId = event.tripId,
+            gpsLostTime = event.gpsLostTime,
+            gpsRecoveredTime = event.gpsRecoveredTime,
+            durationMillis = event.durationMillis ?: if (event.gpsRecoveredTime != null) (event.gpsRecoveredTime - event.gpsLostTime).coerceAtLeast(0L) else null
+        )
+    }
+}
+

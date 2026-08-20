@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.example.data.database.entity.GpsDiagnosticEntity
 import com.example.data.database.entity.TripEntity
 import com.example.data.database.entity.TripPointEntity
 import kotlinx.coroutines.flow.Flow
@@ -59,12 +60,36 @@ interface TripDao {
     @Query("DELETE FROM trip_points WHERE tripId = :tripId")
     suspend fun deletePointsForTrip(tripId: Long)
 
+    // GPS Diagnostics queries
+    @Query("SELECT * FROM gps_diagnostic_events WHERE tripId = :tripId ORDER BY gpsLostTime ASC")
+    fun getGpsDiagnosticsForTrip(tripId: Long): Flow<List<GpsDiagnosticEntity>>
+
+    @Query("SELECT * FROM gps_diagnostic_events WHERE tripId = :tripId ORDER BY gpsLostTime ASC")
+    suspend fun getGpsDiagnosticsForTripList(tripId: Long): List<GpsDiagnosticEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGpsDiagnostics(events: List<GpsDiagnosticEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGpsDiagnostic(event: GpsDiagnosticEntity): Long
+
+    @Query("DELETE FROM gps_diagnostic_events WHERE tripId = :tripId")
+    suspend fun deleteGpsDiagnosticsForTrip(tripId: Long)
+
     @Transaction
-    suspend fun saveCompletedTrip(trip: TripEntity, points: List<TripPointEntity>) {
+    suspend fun saveCompletedTrip(
+        trip: TripEntity,
+        points: List<TripPointEntity>,
+        gpsEvents: List<GpsDiagnosticEntity> = emptyList()
+    ) {
         val tripId = insertTrip(trip)
         val mappedPoints = points.map { it.copy(tripId = tripId) }
         if (mappedPoints.isNotEmpty()) {
             insertPoints(mappedPoints)
+        }
+        val mappedEvents = gpsEvents.map { it.copy(tripId = tripId) }
+        if (mappedEvents.isNotEmpty()) {
+            insertGpsDiagnostics(mappedEvents)
         }
     }
 }

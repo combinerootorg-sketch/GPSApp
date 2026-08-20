@@ -11,6 +11,7 @@ import com.example.data.location.LocationResultWrapper
 import com.example.data.repository.TripRepository
 import com.example.data.settings.SettingsRepository
 import com.example.domain.model.AppSettings
+import com.example.domain.model.GpsDiagnosticEvent
 import com.example.domain.model.GpsStatus
 import com.example.domain.model.Trip
 import com.example.domain.model.TripPoint
@@ -98,11 +99,44 @@ class TripTrackingEngine(
     private var lastKnownLocationAvailability: Boolean = true
     private var isPermissionDenied: Boolean = false
 
+    // GPS Diagnostics Outage tracking
+    private val activeGpsDiagnosticEvents = mutableListOf<GpsDiagnosticEvent>()
+    private var currentGpsLossStartTimeWallClock: Long? = null
+
     init {
         engineScope.launch {
             settingsRepository.settingsFlow.collectLatest { settings ->
                 currentSettings = settings
             }
+        }
+    }
+
+    private fun handleGpsStatusLossCheck(gpsStatus: GpsStatus, nowWallClock: Long, isTracking: Boolean, tripStatus: TripStatus) {
+        if (!isTracking || tripStatus == TripStatus.STOPPED || tripStatus == TripStatus.NOT_STARTED) {
+            return
+        }
+        if (gpsStatus == GpsStatus.UNAVAILABLE || gpsStatus == GpsStatus.PERMISSION_REQUIRED) {
+            if (currentGpsLossStartTimeWallClock == null) {
+                currentGpsLossStartTimeWallClock = nowWallClock
+                Log.d(TAG, "GPS Diagnostic: Signal loss detected at timestamp=$nowWallClock")
+            }
+        }
+    }
+
+    private fun handleGpsRecoveryCheck(nowWallClock: Long) {
+        val lossStart = currentGpsLossStartTimeWallClock
+        if (lossStart != null) {
+            val duration = (nowWallClock - lossStart).coerceAtLeast(0L)
+            activeGpsDiagnosticEvents.add(
+                GpsDiagnosticEvent(
+                    tripId = 0,
+                    gpsLostTime = lossStart,
+                    gpsRecoveredTime = nowWallClock,
+                    durationMillis = duration
+                )
+            )
+            currentGpsLossStartTimeWallClock = null
+            Log.d(TAG, "GPS Diagnostic: Signal recovered at timestamp=$nowWallClock, duration=${duration}ms")
         }
     }
 
@@ -126,6 +160,8 @@ class TripTrackingEngine(
         lastValidLocationAccuracy = 0f
         lastKnownLocationAvailability = true
         isPermissionDenied = false
+        activeGpsDiagnosticEvents.clear()
+        currentGpsLossStartTimeWallClock = null
 
         val previousStatus = _tripState.value.tripStatus
         val initialStatus = TripStatus.WAITING // Initially waiting until speed >= movement threshold
@@ -228,8 +264,11 @@ class TripTrackingEngine(
             isCompleted = true
         )
 
-        // Save to Room database
-        tripRepository.saveCompletedTrip(completedTrip, points)
+        // Finalize any open GPS outage at trip conclusion
+        handleGpsRecoveryCheck(endWallClock)
+
+        // Save to Room database with recorded GPS diagnostic events
+        tripRepository.saveCompletedTrip(completedTrip, points, activeGpsDiagnosticEvents.toList())
 
         _tripState.value = state.copy(
             tripStatus = TripStatus.STOPPED,
@@ -300,6 +339,7 @@ class TripTrackingEngine(
 
         // Re-evaluate GPS health periodically so signal loss transitions through WEAK -> UNAVAILABLE
         val currentGpsStatus = computeGpsStatus(nowElapsed)
+        handleGpsStatusLossCheck(currentGpsStatus, System.currentTimeMillis(), state.isTracking, state.tripStatus)
 
         _tripState.update {
             it.copy(
@@ -374,6 +414,7 @@ class TripTrackingEngine(
 
         if (wrapper.isPermissionDenied) {
             isPermissionDenied = true
+            handleGpsStatusLossCheck(GpsStatus.PERMISSION_REQUIRED, nowWallClock, state.isTracking, state.tripStatus)
             _tripState.update { it.copy(gpsStatus = GpsStatus.PERMISSION_REQUIRED) }
             return@withLock
         }
@@ -397,6 +438,7 @@ class TripTrackingEngine(
         val location = wrapper.location
         if (location == null) {
             val evaluatedGpsStatus = computeGpsStatus(nowElapsed)
+            handleGpsStatusLossCheck(evaluatedGpsStatus, nowWallClock, state.isTracking, state.tripStatus)
             _tripState.update { it.copy(gpsStatus = evaluatedGpsStatus) }
             return@withLock
         }
@@ -417,9 +459,13 @@ class TripTrackingEngine(
 
         if (!isValid) {
             val evaluatedGpsStatus = computeGpsStatus(nowElapsed)
+            handleGpsStatusLossCheck(evaluatedGpsStatus, nowWallClock, state.isTracking, state.tripStatus)
             _tripState.update { it.copy(gpsStatus = evaluatedGpsStatus) }
             return@withLock
         }
+
+        // Valid location received - check if recovering from GPS loss
+        handleGpsRecoveryCheck(nowWallClock)
 
         // Calculate time since previous valid location
         val timeSincePrevValid = if (lastValidLocationElapsedRealtime > 0L) {
@@ -555,6 +601,8 @@ class TripTrackingEngine(
     fun reset() {
         stopLocationUpdates()
         stopTimerTicker()
+        activeGpsDiagnosticEvents.clear()
+        currentGpsLossStartTimeWallClock = null
         _tripState.value = ActiveTripState()
     }
 }

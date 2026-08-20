@@ -10,6 +10,7 @@ import com.example.data.export.TripExportManager
 import com.example.data.repository.TripRepository
 import com.example.data.settings.SettingsRepository
 import com.example.domain.model.AppSettings
+import com.example.domain.model.GpsDiagnosticEvent
 import com.example.domain.model.Trip
 import com.example.domain.model.TripPoint
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,6 +30,9 @@ class TripDetailsViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val points: StateFlow<List<TripPoint>> = tripRepository.getPointsForTrip(tripId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val gpsDiagnostics: StateFlow<List<GpsDiagnosticEvent>> = tripRepository.getGpsDiagnosticsForTrip(tripId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val settings: StateFlow<AppSettings> = settingsRepository.settingsFlow

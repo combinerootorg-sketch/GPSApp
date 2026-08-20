@@ -14,6 +14,14 @@ data class TripPoint(
     val status: TripStatus = TripStatus.MOVING
 )
 
+data class GpsDiagnosticEvent(
+    val id: Long = 0,
+    val tripId: Long = 0,
+    val gpsLostTime: Long,
+    val gpsRecoveredTime: Long? = null,
+    val durationMillis: Long? = null
+)
+
 data class Trip(
     val id: Long = 0,
     val tripNumber: Int = 1,

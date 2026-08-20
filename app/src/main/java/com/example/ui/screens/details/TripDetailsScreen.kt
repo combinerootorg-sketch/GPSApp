@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Share
@@ -32,6 +33,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.domain.model.GpsDiagnosticEvent
 import com.example.ui.components.InteractiveRouteMap
 import com.example.ui.components.StatCard
 import com.example.ui.components.TripCostCard
@@ -78,6 +81,7 @@ fun TripDetailsScreen(
 ) {
     val trip by viewModel.trip.collectAsStateWithLifecycle()
     val points by viewModel.points.collectAsStateWithLifecycle()
+    val gpsDiagnostics by viewModel.gpsDiagnostics.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
 
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -336,6 +340,144 @@ fun TripDetailsScreen(
                                             fontSize = 13.sp,
                                             fontFamily = FontFamily.Monospace
                                         )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // GPS Diagnostics Section
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GpsFixed,
+                                contentDescription = "GPS Diagnostics",
+                                tint = PrimaryCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "GPS DIAGNOSTICS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (gpsDiagnostics.isEmpty()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(StatusMovingGreen, CircleShape)
+                                )
+                                Text(
+                                    text = "No GPS signal loss recorded during this trip.",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                gpsDiagnostics.forEachIndexed { index, event ->
+                                    if (index > 0) {
+                                        HorizontalDivider(
+                                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                        )
+                                    }
+
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        if (gpsDiagnostics.size > 1) {
+                                            Text(
+                                                text = "Outage #${index + 1}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = StatusWaitingAmber
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "GPS Lost:",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = Formatters.formatTime(event.gpsLostTime, settings.timeFormat),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = StatusErrorRed
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(3.dp))
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "GPS Recovered:",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = if (event.gpsRecoveredTime != null) {
+                                                    Formatters.formatTime(event.gpsRecoveredTime, settings.timeFormat)
+                                                } else {
+                                                    "Not recovered"
+                                                },
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = StatusMovingGreen
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(3.dp))
+
+                                        val durationMs = event.durationMillis
+                                            ?: if (event.gpsRecoveredTime != null) (event.gpsRecoveredTime - event.gpsLostTime).coerceAtLeast(0L) else null
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "GPS Loss Duration:",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = if (durationMs != null) {
+                                                    Formatters.formatDurationShort(durationMs)
+                                                } else {
+                                                    "—"
+                                                },
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = StatusWaitingAmber
+                                            )
+                                        }
                                     }
                                 }
                             }

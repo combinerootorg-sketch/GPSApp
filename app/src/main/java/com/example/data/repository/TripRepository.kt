@@ -1,8 +1,10 @@
 package com.example.data.repository
 
 import com.example.data.database.dao.TripDao
+import com.example.data.database.entity.GpsDiagnosticEntity
 import com.example.data.database.entity.TripEntity
 import com.example.data.database.entity.TripPointEntity
+import com.example.domain.model.GpsDiagnosticEvent
 import com.example.domain.model.Trip
 import com.example.domain.model.TripPoint
 import com.example.domain.model.TripStatistics
@@ -28,10 +30,15 @@ class TripRepository(private val tripDao: TripDao) {
         return maxNumber + 1
     }
 
-    suspend fun saveCompletedTrip(trip: Trip, points: List<TripPoint>): Long {
+    suspend fun saveCompletedTrip(
+        trip: Trip,
+        points: List<TripPoint>,
+        gpsDiagnostics: List<GpsDiagnosticEvent> = emptyList()
+    ): Long {
         val tripEntity = TripEntity.fromDomain(trip)
         val pointEntities = points.map { TripPointEntity.fromDomain(it) }
-        tripDao.saveCompletedTrip(tripEntity, pointEntities)
+        val diagEntities = gpsDiagnostics.map { GpsDiagnosticEntity.fromDomain(it) }
+        tripDao.saveCompletedTrip(tripEntity, pointEntities, diagEntities)
         return tripEntity.id
     }
 
@@ -40,6 +47,7 @@ class TripRepository(private val tripDao: TripDao) {
     }
 
     suspend fun deleteTrip(tripId: Long) {
+        tripDao.deleteGpsDiagnosticsForTrip(tripId)
         tripDao.deletePointsForTrip(tripId)
         tripDao.deleteTrip(tripId)
     }
@@ -56,6 +64,16 @@ class TripRepository(private val tripDao: TripDao) {
 
     suspend fun getPointsForTripList(tripId: Long): List<TripPoint> {
         return tripDao.getPointsForTripList(tripId).map { it.toDomain() }
+    }
+
+    fun getGpsDiagnosticsForTrip(tripId: Long): Flow<List<GpsDiagnosticEvent>> {
+        return tripDao.getGpsDiagnosticsForTrip(tripId).map { entities ->
+            entities.map { it.toDomain() }
+        }
+    }
+
+    suspend fun getGpsDiagnosticsForTripList(tripId: Long): List<GpsDiagnosticEvent> {
+        return tripDao.getGpsDiagnosticsForTripList(tripId).map { it.toDomain() }
     }
 
     fun getTripStatistics(): Flow<TripStatistics> {
